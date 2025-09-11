@@ -1,0 +1,312 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* QChat Design System - Professional Enterprise AI Interface */
+
+@layer base {
+  :root {
+    /* Core backgrounds - Professional navy and soft whites */
+    --background: 220 15% 97%;
+    --foreground: 220 25% 15%;
+    
+    /* Chat interface colors - Enterprise navy theme */
+    --chat-background: 220 20% 95%;
+    --chat-bubble-user: 210 100% 56%;
+    --chat-bubble-ai: 0 0% 100%;
+    --chat-text-user: 0 0% 100%;
+    --chat-text-ai: 220 25% 20%;
+    
+    /* Sidebar colors - Professional charcoal */
+    --sidebar-background: 220 15% 94%;
+    --sidebar-item-hover: 220 20% 90%;
+    --sidebar-item-active: 210 100% 56%;
+    --sidebar-text: 220 20% 30%;
+    
+    /* Glass morphism - Refined transparency */
+    --glass-background: 0 0% 100% / 0.85;
+    --glass-border: 220 15% 88%;
+    --glass-shadow: 220 25% 15% / 0.12;
+    
+    /* Primary brand colors - Professional teal */
+    --primary: 175 70% 41%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 175 70% 36%;
+    --primary-light: 175 70% 95%;
+    
+    /* Gradients - Professional enterprise theme */
+    --gradient-primary: linear-gradient(135deg, hsl(175 70% 41%), hsl(195 85% 45%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 15% 92%), hsl(220 20% 96%));
+    --gradient-background: linear-gradient(180deg, hsl(220 15% 97%), hsl(220 10% 94%));
+    
+    /* Interactive elements - Professional neutrals */
+    --secondary: 220 15% 93%;
+    --secondary-foreground: 220 20% 25%;
+    --muted: 220 12% 88%;
+    --muted-foreground: 220 15% 45%;
+    --accent: 45 100% 51%;
+    --accent-foreground: 220 25% 15%;
+    
+    /* Status colors */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* UI elements */
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 8%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 8%;
+    --border: 240 8% 88%;
+    --input: 240 8% 95%;
+    --ring: 175 70% 41%;
+    
+    /* Shadows */
+    --shadow-soft: 0 2px 20px hsl(var(--glass-shadow));
+    --shadow-medium: 0 8px 40px hsl(var(--glass-shadow));
+    --shadow-strong: 0 20px 60px hsl(240 10% 20% / 0.15);
+    
+    /* Animations */
+    --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Core backgrounds - Professional dark theme */
+    --background: 220 25% 9%;
+    --foreground: 220 15% 90%;
+    
+    /* Chat interface colors */
+    --chat-background: 220 25% 12%;
+    --chat-bubble-user: 175 70% 41%;
+    --chat-bubble-ai: 220 20% 15%;
+    --chat-text-user: 0 0% 100%;
+    --chat-text-ai: 220 15% 88%;
+    
+    /* Sidebar colors */
+    --sidebar-background: 220 25% 11%;
+    --sidebar-item-hover: 220 25% 16%;
+    --sidebar-item-active: 175 70% 41%;
+    --sidebar-text: 220 15% 75%;
+    
+    /* Glass morphism */
+    --glass-background: 220 20% 15% / 0.85;
+    --glass-border: 220 20% 25%;
+    --glass-shadow: 0 0% 0% / 0.35;
+    
+    /* Primary brand colors */
+    --primary: 175 70% 41%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 175 70% 46%;
+    --primary-light: 175 70% 15%;
+    
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(175 70% 41%), hsl(195 85% 45%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 25% 18%), hsl(220 25% 22%));
+    --gradient-background: linear-gradient(180deg, hsl(220 25% 9%), hsl(220 25% 13%));
+    
+    /* Interactive elements */
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 220 15% 85%;
+    --muted: 220 20% 20%;
+    --muted-foreground: 220 15% 60%;
+    --accent: 45 100% 51%;
+    --accent-foreground: 220 15% 90%;
+    
+    /* UI elements */
+    --card: 240 8% 15%;
+    --card-foreground: 240 10% 90%;
+    --popover: 240 8% 15%;
+    --popover-foreground: 240 10% 90%;
+    --border: 240 8% 25%;
+    --input: 240 8% 18%;
+    --ring: 175 70% 41%;
+    
+    /* Shadows */
+    --shadow-soft: 0 2px 20px hsl(var(--glass-shadow));
+    --shadow-medium: 0 8px 40px hsl(var(--glass-shadow));
+    --shadow-strong: 0 20px 60px hsl(0 0% 0% / 0.4);
+    
+    /* Legacy sidebar colors for compatibility */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    background: var(--gradient-background);
+    @apply text-foreground min-h-screen;
+  }
+}
+
+@layer components {
+  /* Chat message bubbles */
+  .chat-bubble-user {
+    background: var(--gradient-primary);
+    color: hsl(var(--chat-text-user));
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .chat-bubble-ai {
+    background: hsl(var(--chat-bubble-ai));
+    color: hsl(var(--chat-text-ai));
+    border: 1px solid hsl(var(--border));
+    box-shadow: var(--shadow-soft);
+  }
+  
+  /* Glass morphism effects */
+  .glass-card {
+    background: hsl(var(--glass-background));
+    backdrop-filter: blur(20px);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--shadow-medium);
+  }
+  
+  /* Sidebar styles */
+  .sidebar-item {
+    transition: var(--transition-smooth);
+    @apply rounded-lg;
+  }
+  
+  .sidebar-item:hover {
+    background: hsl(var(--sidebar-item-hover));
+  }
+  
+  .sidebar-item.active {
+    background: var(--gradient-primary);
+    color: hsl(var(--primary-foreground));
+  }
+  
+  /* Button variants */
+  .btn-primary {
+    background: var(--gradient-primary);
+    color: hsl(var(--primary-foreground));
+    transition: var(--transition-smooth);
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .btn-ghost {
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    transition: var(--transition-smooth);
+  }
+  
+  .btn-ghost:hover {
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+  }
+  
+  /* Input styles */
+  .input-modern {
+    background: hsl(var(--input));
+    border: 1px solid hsl(var(--border));
+    transition: var(--transition-smooth);
+  }
+  
+  .input-modern:focus {
+    border-color: hsl(var(--primary));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.1);
+  }
+  
+  /* Animation classes */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+}
+
+@layer utilities {
+  .transition-fast {
+    transition: var(--transition-fast);
+  }
+  
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  
+  .transition-bounce {
+    transition: var(--transition-bounce);
+  }
+  
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-medium {
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .shadow-strong {
+    box-shadow: var(--shadow-strong);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { 
+    box-shadow: 0 0 5px hsl(var(--primary) / 0.5); 
+  }
+  50% { 
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.8); 
+  }
+}
