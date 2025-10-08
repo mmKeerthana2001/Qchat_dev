@@ -34,15 +34,35 @@ class ContextManager:
             collection_name = f"sessions_{session_id}"
             doc_collection = self.db[collection_name]
 
+            # Sanitize candidate_name
+            candidate_name = candidate_name.strip() if candidate_name else "Candidate"
+            if candidate_name.endswith(","):
+                candidate_name = candidate_name[:-1]  # Remove trailing comma
+            logger.info(f"Creating session with candidate_name: '{candidate_name}'")
+
+            # Personalized initial message
+            initial_message = f"Hey {candidate_name}! QChat is here to assist you with your queries along the way."
+            logger.info(f"Initial message set to: '{initial_message}'")
+
             session_data = {
                 "session_id": session_id,
-                "candidate_name": candidate_name or "Unknown",
+                "candidate_name": candidate_name,
                 "candidate_email": candidate_email or "Unknown",
                 "share_token": share_token,
                 "extracted_text": {},
-                "chat_history": [],
-                "initial_message_sent": False,
-                "created_at": time.time()
+                "chat_history": [{
+                    "role": "system",
+                    "query": initial_message,
+                    "response": "",
+                    "timestamp": time.time(),
+                    "intent_data": None,
+                    "audio_base64": None,
+                    "map_data": None,
+                    "media_data": None
+                }],
+                "initial_message_sent": True,
+                "created_at": time.time(),
+                "updated_at": time.time()
             }
             await doc_collection.insert_one(session_data)
             logger.info(f"Created new session in MongoDB: {session_id} for {candidate_name}")
@@ -67,7 +87,16 @@ class ContextManager:
                 raise ValueError(f"Session {session_id} not found")
 
             history = session_data.get("chat_history", [])
-            history.append({"role": "hr", "query": message, "response": "", "timestamp": time.time()})
+            history.append({
+                "role": "hr",
+                "query": message,
+                "response": "",
+                "timestamp": time.time(),
+                "intent_data": None,
+                "audio_base64": None,
+                "map_data": None,
+                "media_data": None
+            })
 
             result = await doc_collection.update_one(
                 {"session_id": session_id},
@@ -139,10 +168,9 @@ class ContextManager:
 
     def chunk_text(self, text: str | List, max_chunk_size: int = 500) -> List[str]:
         try:
-            # Handle non-string input
             if isinstance(text, list):
                 logger.warning(f"Received list instead of string in chunk_text: {text}")
-                text = " ".join(str(item) for item in text if item)  # Convert list to string
+                text = " ".join(str(item) for item in text if item)
             if not isinstance(text, str):
                 logger.error(f"Invalid text type: {type(text)}. Converting to empty string.")
                 text = ""
@@ -179,7 +207,6 @@ class ContextManager:
             collection_name = f"sessions_{session_id}"
             doc_collection = self.db[collection_name]
 
-            # Ensure extracted_text values are strings
             sanitized_extracted_text = {}
             for filename, text in extracted_text.items():
                 if isinstance(text, list):
@@ -255,7 +282,7 @@ class ContextManager:
             f"Retrying process_query for session {retry_state.args[0]} due to {retry_state.outcome.exception()}"
         )
     )
-    async def process_query(self, session_id: str, query: str, role: str) -> Tuple[str, List[Dict[str, str]]]:
+    async def process_query(self, session_id: str, query: str, role: str, intent_data: dict = None) -> Tuple[str, dict | None, List[Dict[str, str]]]:
         try:
             collection_name = f"sessions_{session_id}"
             doc_collection = self.db[collection_name]
@@ -270,7 +297,7 @@ class ContextManager:
             search_result = await self.qdrant_client.search(
                 collection_name=qdrant_collection,
                 query_vector=query_embedding,
-                limit=5
+                limit=3
             )
 
             documents = "\n\n".join(
@@ -281,8 +308,8 @@ class ContextManager:
 
             agent = Agent()
             try:
-                response = await asyncio.wait_for(
-                    agent.process_query(documents, history, query, role),
+                response, media_data = await asyncio.wait_for(
+                    agent.process_query(documents, history, query, role, intent_data),
                     timeout=30.0
                 )
             except asyncio.TimeoutError:
@@ -292,20 +319,39 @@ class ContextManager:
                 logger.error(f"Agent processing error for session {session_id}: {str(e)}")
                 raise
 
-            history.append({"role": role, "query": query, "response": response, "timestamp": time.time()})
+            history.append({
+                "role": role,
+                "query": query,
+                "response": "",
+                "timestamp": time.time(),
+                "intent_data": intent_data,
+                "audio_base64": None,
+                "map_data": None,
+                "media_data": None
+            })
+            history.append({
+                "role": "assistant",
+                "query": "",
+                "response": response,
+                "timestamp": time.time(),
+                "intent_data": intent_data,
+                "audio_base64": None,
+                "map_data": None,
+                "media_data": media_data
+            })
             await doc_collection.update_one(
                 {"session_id": session_id},
                 {"$set": {"chat_history": history[-10:], "updated_at": time.time()}}
             )
-            logger.info(f"Updated chat history for session {session_id}")
+            logger.info(f"Updated chat history for session {session_id} with query and response")
 
-            return response, history
+            return response, media_data, history
 
         except Exception as e:
             logger.error(f"Error processing query for session {session_id}: {str(e)}")
             raise
 
-    async def process_map_query(self, session_id: str, query: str, role: str, map_data: Dict) -> Tuple[str, List[Dict]]:
+    async def process_map_query(self, session_id: str, query: str, role: str, map_data: Dict, intent_data: dict = None) -> Tuple[str, List[Dict]]:
         try:
             collection_name = f"sessions_{session_id}"
             doc_collection = self.db[collection_name]
@@ -321,18 +367,30 @@ class ContextManager:
             history.append({
                 "role": role,
                 "query": query,
+                "response": "",
+                "timestamp": time.time(),
+                "map_data": map_data,
+                "intent_data": intent_data,
+                "audio_base64": None,
+                "media_data": None
+            })
+            history.append({
+                "role": "assistant",
+                "query": "",
                 "response": response,
                 "timestamp": time.time(),
-                "map_data": map_data
+                "map_data": map_data,
+                "intent_data": intent_data,
+                "audio_base64": None,
+                "media_data": None
             })
             await doc_collection.update_one(
                 {"session_id": session_id},
                 {"$set": {"chat_history": history[-10:], "updated_at": time.time()}}
             )
-            logger.info(f"Updated chat history with map query for session {session_id}")
+            logger.info(f"Updated chat history with map query and response for session {session_id}")
 
             return response, history
-
         except Exception as e:
             logger.error(f"Error processing map query for session {session_id}: {str(e)}")
             raise
@@ -340,11 +398,12 @@ class ContextManager:
     async def clear_session(self, session_id: str):
         try:
             collection_name = f"sessions_{session_id}"
-            self.db.drop_collection(collection_name)
+            await self.db.drop_collection(collection_name)
             logger.info(f"Cleared MongoDB collection for session {session_id}")
 
             qdrant_collection = f"docs_{session_id}"
-            self.qdrant_client.delete_collection(qdrant_collection)
+            await self.qdrant_client.delete_collection(qdrant_collection)
             logger.info(f"Cleared Qdrant collection for session {session_id}")
         except Exception as e:
             logger.error(f"Error clearing session {session_id}: {e}")
+            raise
