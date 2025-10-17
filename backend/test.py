@@ -5,8 +5,8 @@ import os
 ELEVENLABS_API_KEY = "sk_be9c76b4f87975c8b9b9b1368654e4bac6f276af000c61a2"
 ELEVENLABS_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
 ELEVENLABS_MODEL_ID_TTS = "eleven_multilingual_v2"
-PRELIMINARY_TEXT = "Ok, let me process that for you, give me a few seconds."
-OUTPUT_PATH = "static/preliminary_response.mp3"
+PRELIMINARY_TEXT = "Please hold on, while I process the required information."
+OUTPUT_PATH = "static/preliminary_response_e.mp3"
  
 # Ensure the static directory exists
 os.makedirs("static", exist_ok=True)

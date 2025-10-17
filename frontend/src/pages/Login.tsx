@@ -39,12 +39,23 @@ const Login = () => {
       <div className="w-full max-w-md">
         {/* Logo and Title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 rounded-xl mb-4">
-            <span className="text-2xl font-bold text-primary">Q</span>
-          </div>
-          <h1 className="text-3xl font-bold text-foreground mb-2">QChat</h1>
-          <p className="text-muted-foreground">Professional AI Assistant</p>
-        </div>
+      <img
+        src="/assets/logo.ico"
+        alt="Quadrant Technologies Logo"
+        className="w-12 h-12 mx-auto mb-4 object-contain"
+        onError={() => {
+          console.error("Failed to load Quadrant logo");
+          toast({
+            title: "Image Error",
+            description: "Failed to load Quadrant logo.",
+            variant: "destructive",
+            duration: 5000,
+          });
+        }}
+      />
+      <h1 className="text-3xl font-bold text-foreground mb-2">ASK HR</h1>
+      
+    </div>
 
         {/* Login Card */}
         <div className="bg-card/80 backdrop-blur-sm border border-border rounded-lg p-8 shadow-lg">
@@ -114,7 +125,7 @@ const Login = () => {
         {/* Footer */}
         <div className="text-center mt-8">
           <p className="text-xs text-muted-foreground">
-            © 2024 QChat. Enterprise AI Solutions.
+            @ 2024 ASK HR. Enterprise AI Solutions.
           </p>
         </div>
       </div>
