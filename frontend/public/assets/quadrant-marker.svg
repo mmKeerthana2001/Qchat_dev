@@ -1,0 +1,15 @@
+<svg width="32" height="40" viewBox="0 0 32 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Marker shape -->
+  <path d="M16 0C7.84 0 2.67 6.04 2.67 13.34C2.67 22.67 16 38 16 38C16 38 29.33 22.67 29.33 13.34C29.33 6.04 24.16 0 16 0Z" fill="#4C2D8A"/>
+  
+  <!-- Inner circle highlight -->
+  <path d="M16 17C18.65 17 20.8 14.85 20.8 12.2C20.8 9.55 18.65 7.4 16 7.4C13.35 7.4 11.2 9.55 11.2 12.2C11.2 14.85 13.35 17 16 17Z" fill="white" fill-opacity="0.2"/>
+  
+  <!-- Text Q, bigger but well-centered -->
+  <text x="16" y="12.5" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle" dominant-baseline="middle">
+    Q
+  </text>
+  
+  <!-- Marker outline -->
+  <path d="M16 36C16 36 28.67 22.67 28.67 13.34C28.67 6.57 22.77 0.67 16 0.67C9.23 0.67 3.33 6.57 3.33 13.34C3.33 22.67 16 36 16 36Z" stroke="#3B1F6B" stroke-width="1.5"/>
+</svg>
