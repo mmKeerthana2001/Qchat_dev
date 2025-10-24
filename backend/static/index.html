@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voice Chat</title>
+</head>
+<body>
+<h2>Voice Chat with Eleven Labs</h2>
+<button id="recordBtn">🎤 Talk</button>
+<p id="transcript"></p>
+
+<script>
+const recordBtn = document.getElementById("recordBtn");
+const transcriptEl = document.getElementById("transcript");
+
+let recognition;
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+} else {
+    alert("Your browser does not support Speech Recognition");
+}
+
+recordBtn.onclick = () => {
+    if (!recognition) return;
+    recognition.start();
+};
+
+recognition.onresult = async (event) => {
+    const text = event.results[0][0].transcript;
+    transcriptEl.innerText = "You said: " + text;
+
+    // Send text to backend
+    const response = await fetch('/voice', {
+        method: 'POST',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text })
+    });
+
+    const data = await response.json();
+
+    // Play audio reply
+    if (data.audio_file) {
+        const audio = new Audio(data.audio_file);
+        audio.play();
+    }
+};
+
+
+recognition.onerror = (event) => {
+    console.error(event.error);
+};
+</script>
+</body>
+</html>
