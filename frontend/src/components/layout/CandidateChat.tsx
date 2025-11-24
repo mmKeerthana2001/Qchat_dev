@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,7 +17,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-
 interface MapData {
   type: "address" | "nearby" | "directions" | "multi_location" | "distance";
   data:
@@ -33,19 +31,16 @@ interface MapData {
   llm_response?: string;
   encoded_polyline?: string;
 }
-
 interface LeadershipMember {
   name: string;
   title: string;
   url: string;
 }
-
 interface MediaData {
   type: "video" | "image" | "leadership";
   url?: string;
   members?: LeadershipMember[];
 }
-
 interface Message {
   id: string;
   role: "user" | "assistant" | "system" | "hr" | "candidate";
@@ -56,7 +51,6 @@ interface Message {
   media_data?: MediaData;
   isTyping?: boolean;
 }
-
 function CandidateChat() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -80,9 +74,7 @@ function CandidateChat() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
   const DEBUG = true;
-
   const suggestedQuestions = [
     "What is the salary range for this position?",
     "What are the next steps in the interview process?",
@@ -98,24 +90,21 @@ function CandidateChat() {
     "Who is on the leadership team?",
     "Who is the best employee?"
   ];
-
   // Typing indicator dots animation
   const getTypingDots = (index: number) => {
     const dots = ['⠂', '⠆', '⠒', '⢄', '⡀'];
     return dots[index % dots.length];
   };
-
   const TypingIndicator = ({ messageId }: { messageId: string }) => {
     const [dotIndex, setDotIndex] = useState(0);
-    
+   
     useEffect(() => {
       const interval = setInterval(() => {
         setDotIndex(prev => (prev + 1) % 3);
       }, 300);
-      
+     
       return () => clearInterval(interval);
     }, []);
-
     return (
       <div className="flex gap-3 mb-4">
         <Avatar className="h-8 w-8 ring-2 ring-primary/20">
@@ -156,13 +145,11 @@ function CandidateChat() {
       </div>
     );
   };
-
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!isSidebarOpen) return;
     setIsResizing(true);
     e.preventDefault();
   }, [isSidebarOpen]);
-
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing || !isSidebarOpen) return;
     const newWidth = e.clientX;
@@ -172,11 +159,9 @@ function CandidateChat() {
       setSidebarWidth(newWidth);
     }
   }, [isResizing, isSidebarOpen]);
-
   const handleMouseUp = useCallback(() => {
     setIsResizing(false);
   }, []);
-
   useEffect(() => {
     if (isResizing && isSidebarOpen) {
       document.addEventListener('mousemove', handleMouseMove);
@@ -191,14 +176,12 @@ function CandidateChat() {
       };
     }
   }, [isResizing, isSidebarOpen, handleMouseMove, handleMouseUp]);
-
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
     if (!isSidebarOpen) {
       setSidebarWidth(280); // Reset to default width when expanding
     }
   };
-
   useEffect(() => {
     const loadGoogleMapsScript = () => {
       if (window.google?.maps) return;
@@ -212,7 +195,6 @@ function CandidateChat() {
     };
     loadGoogleMapsScript();
   }, []);
-
   useEffect(() => {
     const lastMessage = messages[messages.length - 1];
     if (lastMessage?.map_data && mapRef.current && window.google?.maps) {
@@ -220,7 +202,6 @@ function CandidateChat() {
         const coordinates = lastMessage.map_data.coordinates;
         const bounds = new window.google.maps.LatLngBounds();
         coordinates.forEach(coord => bounds.extend({ lat: coord.lat, lng: coord.lng }));
-
         const map = new window.google.maps.Map(mapRef.current, {
           zoom: 13,
           center: bounds.getCenter(),
@@ -242,11 +223,9 @@ function CandidateChat() {
             },
           ],
         });
-
         // Add traffic layer
         const trafficLayer = new window.google.maps.TrafficLayer();
         trafficLayer.setMap(map);
-
         // Add markers with info windows
         coordinates.forEach((coord, index) => {
           const marker = new window.google.maps.Marker({
@@ -255,7 +234,6 @@ function CandidateChat() {
             title: coord.label,
             icon: { url: `http://maps.google.com/mapfiles/ms/icons/${coord.color || 'red'}-dot.png` },
           });
-
           // Create info window for each marker
           const infoWindow = new window.google.maps.InfoWindow({
             content: `
@@ -266,18 +244,15 @@ function CandidateChat() {
               </div>
             `,
           });
-
           marker.addListener('click', () => {
             infoWindow.open(map, marker);
           });
         });
-
        map.fitBounds(bounds, 50); // Add padding for better view
       } else if (lastMessage.map_data.type === "distance" && lastMessage.map_data.coordinates && lastMessage.map_data.encoded_polyline) {
       const coordinates = lastMessage.map_data.coordinates;
       const bounds = new window.google.maps.LatLngBounds();
       coordinates.forEach(coord => bounds.extend({ lat: coord.lat, lng: coord.lng }));
-
       const map = new window.google.maps.Map(mapRef.current, {
         center: bounds.getCenter(),
         mapTypeId: window.google.maps.MapTypeId.ROADMAP,
@@ -298,11 +273,9 @@ function CandidateChat() {
           },
         ],
       });
-
       // Add traffic layer
       const trafficLayer = new window.google.maps.TrafficLayer();
       trafficLayer.setMap(map);
-
       // Add markers with info windows
       coordinates.forEach((coord, index) => {
         const marker = new window.google.maps.Marker({
@@ -314,7 +287,6 @@ function CandidateChat() {
             scaledSize: new window.google.maps.Size(40, 40),
           } : { url: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png' },
         });
-
         const infoWindow = new window.google.maps.InfoWindow({
           content: `
             <div style="font-family: Roboto, Arial, sans-serif; padding: 8px;">
@@ -323,12 +295,10 @@ function CandidateChat() {
             </div>
           `,
         });
-
         marker.addListener('click', () => {
           infoWindow.open(map, marker);
         });
       });
-
       const polyline = new window.google.maps.Polyline({
         path: window.google.maps.geometry.encoding.decodePath(lastMessage.map_data.encoded_polyline),
         geodesic: true,
@@ -339,19 +309,16 @@ function CandidateChat() {
         // Mimic Google Maps' rounded line caps and joins
         // Note: Google Maps JS API doesn't directly support lineCap/lineJoin, but strokeWeight and opacity help
       });
-
       class RouteInfoOverlay extends window.google.maps.OverlayView {
         position: google.maps.LatLng;
         content: string;
         div: HTMLDivElement | null;
-
         constructor(position: google.maps.LatLng, content: string) {
           super();
           this.position = position;
           this.content = content;
           this.div = null;
         }
-
         onAdd() {
           this.div = document.createElement('div');
           this.div.style.position = 'absolute';
@@ -364,18 +331,15 @@ function CandidateChat() {
           this.div.style.fontSize = '14px';
           this.div.style.color = '#202124';
           this.div.innerHTML = this.content;
-
           const panes = this.getPanes();
           panes.floatPane.appendChild(this.div);
         }
-
         draw() {
           const projection = this.getProjection();
           const pixel = projection.fromLatLngToDivPixel(this.position);
           this.div!.style.left = `${pixel.x + 10}px`;
           this.div!.style.top = `${pixel.y + 10}px`;
         }
-
         onRemove() {
           if (this.div) {
             this.div.parentNode!.removeChild(this.div);
@@ -383,7 +347,6 @@ function CandidateChat() {
           }
         }
       }
-
       const topLeftPosition = bounds.getNorthEast();
       const routeInfoContent = `
         <div style="display: flex; align-items: center; gap: 8px;">
@@ -394,18 +357,14 @@ function CandidateChat() {
       `;
       const routeInfoOverlay = new RouteInfoOverlay(topLeftPosition, routeInfoContent);
       routeInfoOverlay.setMap(map);
-
       map.fitBounds(bounds, 100); // Increased padding for better route visibility
     }
   }
 }, [messages]);
-
   const connectWebSocket = useCallback(() => {
     if (!sessionId) return;
-
     const ws = new WebSocket(`ws://localhost:8000/ws/${sessionId}`);
     setWebsocket(ws);
-
     ws.onopen = () => {
       console.log("WebSocket connected for candidate session:", sessionId);
       setReconnectAttempts(0);
@@ -417,7 +376,6 @@ function CandidateChat() {
         }
       }, 30000);
     };
-
     ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -430,11 +388,13 @@ function CandidateChat() {
           toast.error(`Server error: ${data.error}`, { duration: 10000 });
           return;
         }
-
+        if (data.role === "candidate") {
+          // Skip adding candidate messages from WebSocket, as frontend already adds the original user query
+          console.log("Skipping candidate message from WebSocket:", data);
+          return;
+        }
         console.log("Received WebSocket data:", data);
-
         setMessages(prev => prev.filter(msg => !msg.isTyping));
-
         const newMessage: Message = {
           id: crypto.randomUUID(),
           role: data.role,
@@ -460,15 +420,14 @@ function CandidateChat() {
             })) : undefined
           } : undefined
         };
-
         console.log("Constructed newMessage:", newMessage);
-
         setMessages(prev => {
           const isDuplicate = prev.some(
             msg =>
               msg.role === newMessage.role &&
               msg.content === newMessage.content &&
-              JSON.stringify(msg.media_data) === JSON.stringify(newMessage.media_data)
+              JSON.stringify(msg.map_data || {}) === JSON.stringify(newMessage.map_data || {}) &&
+              JSON.stringify(msg.media_data || {}) === JSON.stringify(newMessage.media_data || {})
           );
           if (isDuplicate) {
             console.log("Duplicate WebSocket message ignored:", data);
@@ -482,7 +441,6 @@ function CandidateChat() {
         toast.error("Failed to process incoming message", { duration: 5000 });
       }
     };
-
     ws.onclose = (event) => {
       console.log(`WebSocket closed for session ${sessionId}: code=${event.code}, reason=${event.reason}`);
       clearInterval(pingIntervalRef.current!);
@@ -498,20 +456,17 @@ function CandidateChat() {
         toast.error("Failed to reconnect WebSocket after multiple attempts", { duration: 10000 });
       }
     };
-
     ws.onerror = (error) => {
       console.error("WebSocket error:", error);
       toast.error("WebSocket connection error", { duration: 10000 });
     };
   }, [sessionId, reconnectAttempts]);
-
   useEffect(() => {
     const token = searchParams.get("token");
     if (!token) {
       toast.error("Missing token. Please access via a valid link", { duration: 10000 });
       return;
     }
-
     const validateToken = async () => {
       try {
         setIsSessionLoading(true);
@@ -528,7 +483,6 @@ function CandidateChat() {
     };
     validateToken();
   }, [searchParams]);
-
   useEffect(() => {
     if (sessionId) {
       const fetchMessages = async () => {
@@ -573,7 +527,6 @@ function CandidateChat() {
       fetchMessages();
       connectWebSocket();
     }
-
     return () => {
       if (websocket) {
         websocket.close();
@@ -582,7 +535,6 @@ function CandidateChat() {
       }
     };
   }, [sessionId, connectWebSocket]);
-
   useEffect(() => {
     if (scrollAreaRef.current) {
       const scrollElement = scrollAreaRef.current.querySelector(".scrollarea-viewport");
@@ -591,7 +543,6 @@ function CandidateChat() {
       }
     }
   }, [messages]);
-
   const handleSubmit = async (e: React.FormEvent, overrideMessage?: string) => {
     e.preventDefault();
     const finalMessage = (overrideMessage || message).trim();
@@ -599,9 +550,7 @@ function CandidateChat() {
       toast.error("Cannot send message: No session or empty message", { duration: 10000 });
       return;
     }
-
     setIsLoading(true);
-
     try {
       const candidateMessage: Message = {
         id: crypto.randomUUID(),
@@ -609,9 +558,8 @@ function CandidateChat() {
         content: finalMessage,
         timestamp: new Date(),
       };
-      
+     
       setMessages(prev => [...prev, candidateMessage]);
-
       const typingMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -620,29 +568,32 @@ function CandidateChat() {
         isTyping: true
       };
       setMessages(prev => [...prev, typingMessage]);
-
       const response = await fetch(`http://localhost:8000/chat/${sessionId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: finalMessage, role: "candidate" })
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Failed to send message");
       }
-
       const data = await response.json();
       console.log("HTTP response data:", data);
-
       setMessages(prev => prev.filter(msg => !msg.isTyping));
-
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
         content: data.response,
         timestamp: new Date(),
-        map_data: data.map_data,
+        map_data: data.map_data ? {
+          type: data.map_data.type,
+          data: data.map_data.data,
+          map_url: data.map_data.map_url,
+          static_map_url: data.map_data.static_map_url,
+          coordinates: data.map_data.coordinates,
+          llm_response: data.map_data.llm_response,
+          encoded_polyline: data.map_data.encoded_polyline
+        } : undefined,
         media_data: data.media_data ? {
           type: data.media_data.type,
           url: data.media_data.url,
@@ -653,18 +604,15 @@ function CandidateChat() {
           })) : undefined
         } : undefined
       };
-
       console.log("Constructed assistantMessage:", assistantMessage);
-
       setMessages(prev => {
-        const filtered = prev.filter(
-          msg => !(msg.role === "candidate" && msg.content === finalMessage)
-        );
+        const filtered = prev.filter(msg => !msg.isTyping);
         const isAssistantDuplicate = filtered.some(
           msg =>
             msg.role === "assistant" &&
             msg.content === data.response &&
-            JSON.stringify(msg.media_data) === JSON.stringify(data.media_data) &&
+            JSON.stringify(msg.map_data || {}) === JSON.stringify(assistantMessage.map_data || {}) &&
+            JSON.stringify(msg.media_data || {}) === JSON.stringify(assistantMessage.media_data || {}) &&
             !msg.isTyping
         );
         if (isAssistantDuplicate) {
@@ -673,14 +621,12 @@ function CandidateChat() {
         }
         return [...filtered, assistantMessage];
       });
-
       setMessage("");
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } catch (error) {
       console.error("Error sending message:", error);
-      setMessages(prev => 
-        prev.filter(msg => 
-          !(msg.role === "candidate" && msg.content === finalMessage) && 
+      setMessages(prev =>
+        prev.filter(msg =>
           !msg.isTyping
         )
       );
@@ -689,21 +635,18 @@ function CandidateChat() {
       setIsLoading(false);
     }
   };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
     }
   };
-
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     const textarea = e.target;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   };
-
   const handleSuggestedQuestionClick = (question: string) => {
     if (!sessionId || isSessionLoading || isLoading) {
       toast.error("No session available or processing. Please wait.", { duration: 5000 });
@@ -713,7 +656,6 @@ function CandidateChat() {
     const syntheticEvent = new Event('submit') as any;
     handleSubmit(syntheticEvent, question);
   };
-
   const handleVoiceMode = () => {
     if (!sessionId) {
       toast.error("No session selected", { duration: 10000 });
@@ -722,7 +664,6 @@ function CandidateChat() {
     const token = searchParams.get("token");
     navigate(`/voice-interaction?sessionId=${sessionId}&token=${token}`);
   };
-
   // Updated formatTime function to include date and time
   const formatTime = (date: Date) => {
     return new Intl.DateTimeFormat('en-US', {
@@ -735,7 +676,6 @@ function CandidateChat() {
       hour12: true
     }).format(date);
   };
-
   const preprocessJobDescription = (content: string, mediaData?: MediaData): string => {
     if (mediaData?.type === "leadership") {
       return "Here is the leadership team of Quadrant Technologies.";
@@ -746,7 +686,6 @@ function CandidateChat() {
     if (content === "No documents available to answer your query. Please upload relevant documents or ask a location-based question.") {
       return "I don't have the documents needed to answer your question right now. Could you upload any relevant files or try asking a location-based question? I'm here to help!";
     }
-
     if (content.includes("**") && content.includes("1.")) {
       const intro = "\n\n";
       let formattedContent = content.replace(/\*\*(.*?)\*\*/g, '**$1**');
@@ -759,25 +698,20 @@ function CandidateChat() {
       });
       return intro + lines.join('\n');
     }
-
     return content;
   };
-
   const renderMapData = (mapData: MapData) => {
     const getCityFromAddress = (address: string): string => {
       const parts = address.split(",");
       return parts.length > 2 ? parts[parts.length - 2].trim() : "Location";
     };
-
     const renderStars = (rating: number | string | undefined) => {
       if (!rating || rating === 'N/A') return null;
       const ratingNum = typeof rating === 'string' ? parseFloat(rating) : rating;
       if (isNaN(ratingNum)) return null;
-
       const fullStars = Math.floor(ratingNum);
       const hasHalfStar = ratingNum % 1 >= 0.3;
       const stars = [];
-
       for (let i = 0; i < 5; i++) {
         if (i < fullStars) {
           stars.push(<Star key={i} className="h-4 w-4 text-yellow-500" fill="currentColor" />);
@@ -791,7 +725,6 @@ function CandidateChat() {
       }
       return stars;
     };
-
     const formatPriceLevel = (priceLevel: string | undefined) => {
       if (!priceLevel || priceLevel === 'N/A') return null;
       const priceMap: { [key: string]: string } = {
@@ -807,7 +740,6 @@ function CandidateChat() {
       };
       return priceMap[priceLevel] || priceLevel;
     };
-
     switch (mapData.type) {
       case "address":
         return (
@@ -970,7 +902,6 @@ function CandidateChat() {
         return null;
     }
   };
-
   const renderMediaData = (mediaData: MediaData) => {
     console.log("Rendering media_data:", mediaData);
     if (mediaData.type === "video") {
@@ -1058,8 +989,8 @@ function CandidateChat() {
             {mediaData.members && mediaData.members.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {mediaData.members.map((member, index) => (
-                  <div 
-                    key={index} 
+                  <div
+                    key={index}
                     className="group flex flex-col items-center p-3 bg-card rounded-lg border border-border hover:shadow-md hover:border-primary/50 transition-all duration-200"
                   >
                     <Dialog>
@@ -1102,7 +1033,7 @@ function CandidateChat() {
                     </Dialog>
                     <div className="mt-3 text-center space-y-1">
                       <p className="text-sm font-semibold text-foreground line-clamp-1">{member.name}</p>
-                      <p 
+                      <p
                         className="text-xs text-muted-foreground line-clamp-2 max-w-[140px] leading-tight"
                         title={member.title}
                       >
@@ -1130,18 +1061,15 @@ function CandidateChat() {
     }
     return null;
   };
-
   const handleImageClick = (src: string, alt: string) => {
     if (DEBUG) console.log(`Image clicked: src=${src}, alt=${alt}`);
     setSelectedImage({ src, alt });
     setIsDialogOpen(true);
   };
-
   const renderMessage = (message: Message) => {
     if (message.isTyping) {
       return <TypingIndicator messageId={message.id} />;
     }
-
     if ((message.role === "hr" || message.role === "candidate" || message.role === "system")) {
       return (
         <div className={`flex ${message.role === "candidate" ? "justify-end" : "justify-start"} gap-3 mb-4`}>
@@ -1276,17 +1204,15 @@ function CandidateChat() {
     }
     return null;
   };
-
   // Calculate sidebar width for main content margin
   const sidebarWidthPx = isSidebarOpen ? sidebarWidth : 0;
   const sidebarClasses = `fixed inset-y-0 left-0 bg-card/50 backdrop-blur-xl border-r border-border flex flex-col transition-all duration-300 ease-in-out z-40 ${
     isSidebarOpen ? 'translate-x-0 w-[${sidebarWidth}px]' : 'w-0 -translate-x-full'
   }`;
-
   return (
     <div className="flex h-screen w-full flex-row overflow-hidden">
       {/* Sidebar */}
-      <div 
+      <div
         ref={sidebarRef}
         className={sidebarClasses}
         style={{ width: isSidebarOpen ? `${sidebarWidth}px` : '0px' }}
@@ -1310,7 +1236,6 @@ function CandidateChat() {
             )}
           </Button>
         </div>
-
         {/* Sidebar Content - only visible when expanded */}
         {isSidebarOpen && (
           <div className="flex-1 overflow-hidden">
@@ -1332,7 +1257,6 @@ function CandidateChat() {
             </ScrollArea>
           </div>
         )}
-
         {/* Resize handle - only visible when expanded */}
         {isSidebarOpen && (
           <div
@@ -1346,11 +1270,10 @@ function CandidateChat() {
           </div>
         )}
       </div>
-
       {/* Main Chat Content */}
-      <div 
+      <div
         className="flex flex-col flex-1 transition-all duration-300 ease-in-out"
-        style={{ 
+        style={{
           marginLeft: isSidebarOpen ? `${sidebarWidth}px` : '0px',
           width: isSidebarOpen ? `calc(100vw - ${sidebarWidth}px)` : '100vw'
         }}
@@ -1384,7 +1307,6 @@ function CandidateChat() {
             </Button>
           </div>
         </header>
-
         {/* Messages Area */}
         <ScrollArea className="flex-1" ref={scrollAreaRef}>
           <div className={`p-4 ${isSidebarOpen ? 'md:pr-4' : 'pr-4'}`}>
@@ -1415,7 +1337,6 @@ function CandidateChat() {
             </div>
           </div>
         </ScrollArea>
-
         {/* Input Area */}
         <div className="border-t border-border bg-card/50 backdrop-blur-xl p-4">
           <div className="max-w-4xl mx-auto">
@@ -1450,5 +1371,4 @@ function CandidateChat() {
     </div>
   );
 }
-
 export default CandidateChat;

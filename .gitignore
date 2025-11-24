@@ -7,6 +7,9 @@ __pycache__/
 # Logs
 *.log
 backend/logs/
+backend/app.py
+backend/test.py
+backend/test_telugu.py
  
 # Virtual environments
 venv/

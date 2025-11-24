@@ -1,37 +1,80 @@
-import requests
 import os
+from dotenv import load_dotenv
+from google.cloud import texttospeech
+from google.cloud import translate_v2 as translate  # This works after installing the package
+from google.oauth2 import service_account
 
-# Configuration
-ELEVENLABS_API_KEY = "sk_72c55a358281c342e387852646d8eb25293f428234578d29"
-ELEVENLABS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
-ELEVENLABS_MODEL_ID_TTS = "eleven_multilingual_v2"
-PRELIMINARY_TEXT = "Ok, let me process that for you, give me a few seconds."
-OUTPUT_PATH = "static/preliminary_response.mp3"
+load_dotenv()
 
-# Ensure the static directory exists
-os.makedirs("static", exist_ok=True)
+def english_to_kannada_tts(text, output_file="output_kannada.mp3"):
+    # Load credentials
+    creds_path = os.getenv("GOOGLE_TTS")
+    if not creds_path or not os.path.exists(creds_path):
+        raise Exception("GOOGLE_TTS path not found or file doesn't exist in .env")
 
-# Generate audio file
-tts_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
-tts_headers = {
-    "xi-api-key": ELEVENLABS_API_KEY,
-    "Content-Type": "application/json",
-    "Accept": "audio/mp3"
-}
-tts_payload = {
-    "text": PRELIMINARY_TEXT,
-    "model_id": ELEVENLABS_MODEL_ID_TTS,
-    "voice_settings": {
-        "stability": 0.5,
-        "similarity_boost": 0.5
-    }
-}
+    credentials = service_account.Credentials.from_service_account_file(creds_path)
 
-try:
-    response = requests.post(tts_url, headers=tts_headers, json=tts_payload)
-    response.raise_for_status()
-    with open(OUTPUT_PATH, "wb") as f:
-        f.write(response.content)
-    print(f"Preliminary audio saved to {OUTPUT_PATH}")
-except requests.RequestException as e:
-    print(f"Error generating audio: {str(e)}")
+    # Step 1: Translate English → Kannada
+    translate_client = translate.Client(credentials=credentials)
+    result = translate_client.translate(text, target_language="kn")
+    kannada_text = result["translatedText"]
+    print(f"Translated to Kannada: {kannada_text}")
+
+    # Step 2: Text-to-Speech in Kannada
+    tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+
+    synthesis_input = texttospeech.SynthesisInput(text=kannada_text)
+
+    voice = texttospeech.VoiceSelectionParams(
+        language_code="kn-IN",
+        name="kn-IN-Chirp3-HD-Achernar"  # Best quality Kannada voice
+    )
+
+    audio_config = texttospeech.AudioConfig(
+        audio_encoding=texttospeech.AudioEncoding.MP3
+    )
+
+    response = tts_client.synthesize_speech(
+        input=synthesis_input,
+        voice=voice,
+        audio_config=audio_config
+    )
+
+    # Save the audio file
+    with open(output_file, "wb") as out:
+        out.write(response.audio_content)
+
+    print(f"Success: Kannada audio saved as {output_file}")
+    return output_file
+
+
+# ---------------- RUN ----------------
+if __name__ == "__main__":
+    english_text = """
+Quadrant Leave Policy Overview:
+- Objective: Quadrant encourages employee well-being and supports taking leaves for personal time off to ensure employees are at their best when at work.
+- Applicability: This policy applies to all permanent employees of the company.
+- Leave Year: The leave year is based on the calendar year.
+
+Types of Leaves:
+1. Casual Leave (CL):
+   - All permanent employees are entitled to 20 days of leave annually (pro-rated from the date of joining).
+   - During the probation period, employees will be eligible for 1 leave per month.
+   - Leaves are credited on a quarterly basis (5 per quarter) after the probation period.
+   - At the end of the year, only 8 leaves can be carried forward to the next year.
+
+2. Compensatory Off (CO):
+   - Employees may be entitled to Comp Off if they work on national, non-working, or festival holidays, subject to prior agreement with their reporting manager.
+
+3. Maternity Leave (ML):
+   - Female employees are entitled to 8 weeks of maternity leave after working for a minimum of 80 days in the last 12 months.
+
+Other Rules:
+- Employees must communicate leave details to their respective Reporting Managers via email and get approval in writing.
+- All leaves must be applied in the designated system (GreytHR) and approved before payroll cut-off dates.
+- In case of non-regularization, leave will be considered as Leave Without Pay (LOP).
+
+If you have any further questions or need more details, feel free to ask!
+"""
+
+    english_to_kannada_tts(english_text)

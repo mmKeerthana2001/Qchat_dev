@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kannada Speech Assistant</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
+        padding: 40px;
+    }
+    .container {
+        max-width: 700px;
+        margin: auto;
+        background: #fff;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+        margin-bottom: 20px;
+    }
+    button:disabled {
+        background: #999;
+    }
+    .output-box {
+        background: #fafafa;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+        border: 1px solid #ddd;
+        white-space: pre-wrap;
+    }
+    .label {
+        font-weight: bold;
+        margin-top: 15px;
+        font-size: 17px;
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🎤 Kannada / English Speech Assistant</h1>
+    <p>Click the button and speak in Kannada or English. The backend will answer in the same language.</p>
+
+    <button id="recordBtn">🎙️ Start Recording</button>
+    <p id="status" style="font-weight:bold; color:#333;">Status: Idle</p>
+
+    <div class="label">Detected Language:</div>
+    <div id="langBox" class="output-box"></div>
+
+    <div class="label">Your Question:</div>
+    <div id="userBox" class="output-box"></div>
+
+    <div class="label">Assistant Answer:</div>
+    <div id="answerBox" class="output-box"></div>
+</div>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+const recordBtn = document.getElementById("recordBtn");
+const statusText = document.getElementById("status");
+
+recordBtn.onclick = async function () {
+    if (recordBtn.innerText.includes("Start")) {
+        startRecording();
+    } else {
+        stopRecording();
+    }
+};
+
+async function startRecording() {
+    audioChunks = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.start();
+
+    mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+
+    recordBtn.innerText = "⏹️ Stop Recording";
+    statusText.innerText = "Status: Recording...";
+}
+
+function stopRecording() {
+    mediaRecorder.stop();
+
+    mediaRecorder.onstop = async () => {
+        statusText.innerText = "Status: Processing audio...";
+        recordBtn.innerText = "🎙️ Start Recording";
+
+        const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+        const formData = new FormData();
+        formData.append("file", audioBlob, "audio.wav");
+
+        // Send to FastAPI backend
+        const response = await fetch("http://127.0.0.1:8000/stt", {
+            method: "POST",
+            body: formData
+        });
+
+        const result = await response.json();
+        console.log(result);
+
+        document.getElementById("langBox").innerText = result.detected_language || "";
+        document.getElementById("userBox").innerText = result.user_text || "";
+        document.getElementById("answerBox").innerText = result.answer || "";
+        statusText.innerText = "Status: Done";
+    };
+}
+</script>
+
+</body>
+</html>

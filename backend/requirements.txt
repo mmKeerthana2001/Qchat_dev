@@ -18,3 +18,4 @@ msal
 amazon_transcribe
 googlemaps
 elevenlabs
+fuzzywuzzy

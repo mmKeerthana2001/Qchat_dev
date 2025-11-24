@@ -34,6 +34,11 @@ from openai import AsyncOpenAI
 from pymongo.errors import CollectionInvalid
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import math
+from math import radians, sin, cos, sqrt, atan2
+from fuzzywuzzy import fuzz
+from google.cloud import texttospeech
+from google.oauth2 import service_account
+from openai import OpenAI
 
 load_dotenv()
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -42,16 +47,21 @@ AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
-ELEVENLABS_MODEL_ID_STT = os.getenv("ELEVENLABS_MODEL_ID_STT", "scribe_v1")
+ELEVENLABS_MODEL_ID_STT = os.getenv("ELEVENLABS_MODEL_ID_STT", "scribe_v2")
 ELEVENLABS_MODEL_ID_TTS = os.getenv("ELEVENLABS_MODEL_ID_TTS", "eleven_multilingual_v2")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
+GOOGLE_CREDENTIALS_PATH = os.getenv("GOOGLE_TTS")
+LIVE_MODE = os.getenv("LIVE_MODE", "false").lower() == "true"
+HARDCODED_DELAY_SECONDS = 5  # Fixed 5-second delay before playing hardcoded audio
+KANNADA_PRESTORED_PATH = r"C:\Users\Quadrant\Qchat-main\backend\output_kannada.mp3"
+TELUGU_PRESTORED_PATH = r"C:\Users\Quadrant\Qchat-main\backend\output_telugu.mp3"
 session_storage = {}
 websocket_connections: Dict[str, List[WebSocket]] = {}
 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY) if GOOGLE_MAPS_API_KEY else None
 agent = Agent()
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+sync_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 class DebugMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
@@ -544,6 +554,14 @@ async def chat_with_documents(session_id: str, query_req: QueryRequest):
     except Exception as e:
         logger.error(f"Error processing chat query for session {session_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing chat query: {str(e)}")
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Returns distance in kilometers between two lat/lng points."""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return c * 6371  # Earth radius in km
 
 country_to_city = {
     "malaysia": "Kuala Lumpur, Malaysia",
@@ -554,7 +572,7 @@ country_to_city = {
     "uae": "Dubai, UAE"
 }
 quadrant_locations = [
-    {"city": "US, Redmond, WA", "address": "5020, 148th Ave NE Ste 250, Redmond, WA, 98052", "lat": 47.6456, "lng": -122.1419},
+    {"city": "Redmond, WA", "address": "5020, 148th Ave NE Ste 250, Redmond, WA, 98052", "lat": 47.6456, "lng": -122.1419},
     {"city": "Iselin, NJ", "address": "33 S Wood Ave, Suite 600, Iselin, New Jersey, 08830", "lat": 40.5754, "lng": -74.3282},
     {"city": "Dallas, TX", "address": "3333 Lee Pkwy #600, Dallas, Texas, 75219", "lat": 32.8085, "lng": -96.8035},
     {"city": "Hyderabad, Telangana", "address": "4th floor, Building No.21, Raheja Mindspace, Sy No. 64 (Part), Madhapur, Hyderabad, Telangana, 500081", "lat": 17.4416, "lng": 78.3804},
@@ -570,6 +588,34 @@ quadrant_locations = [
     {"city": "Chiswick, UK", "address": "Gold Building 3 Chiswick Business Park, Chiswick, London, W4 5YA", "lat": 51.4937, "lng": -0.2786}
 ]
 
+# Helper function to infer city from query components
+def infer_city_from_query(query: str, origin: str, destination: str, quadrant_locations: list) -> str:
+    """Infer the city from query, origin, or destination using fuzzy matching."""
+    query_lower = query.lower()
+    candidates = []
+    
+    # Check for city names in query, origin, or destination
+    for loc in quadrant_locations:
+        city_name = loc["city"].lower()
+        # Direct match in query
+        query_score = fuzz.partial_ratio(city_name, query_lower)
+        origin_score = fuzz.partial_ratio(city_name, origin.lower()) if origin else 0
+        dest_score = fuzz.partial_ratio(city_name, destination.lower()) if destination else 0
+        max_score = max(query_score, origin_score, dest_score)
+        if max_score >= 80:
+            candidates.append((loc["city"], max_score))
+    
+    # Sort by score and return the best match
+    if candidates:
+        return max(candidates, key=lambda x: x[1])[0]
+    
+    # Fallback: Check for known landmarks (e.g., "Seattle Airport" -> "Redmond, WA")
+    if "seattle airport" in query_lower or (destination and "seattle airport" in destination.lower()):
+        return "Redmond, WA"  # Closest Quadrant location to Seattle
+    # Add more landmark-to-city mappings as needed
+    return None
+
+# main.py (updated handle_map_query function)
 @app.post("/map-query/{session_id}")
 async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data: dict = None):
     try:
@@ -580,26 +626,30 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
 
         map_data = {}
         intent = intent_data.get("intent", "non_map") if intent_data else "non_map"
-        
         city_value = intent_data.get("city") if intent_data else None
         city_query = city_value.lower() if isinstance(city_value, str) else ""
-        
         nearby_value = intent_data.get("nearby_type") if intent_data else None
         nearby_type = nearby_value.lower() if isinstance(nearby_value, str) else ""
-        
         origin_value = intent_data.get("origin") if intent_data else None
         origin = origin_value.strip() if isinstance(origin_value, str) else ""
         destination_value = intent_data.get("destination") if intent_data else None
         destination = destination_value.strip() if isinstance(destination_value, str) else ""
-        
+
         logger.info(f"Extracted params: intent={intent}, city_query='{city_query}', nearby_type='{nearby_type}', origin='{origin}', destination='{destination}'")
 
+        # Infer city if not provided, but skip for multi_location
+        if intent != "multi_location" and not city_query:
+            city_query = infer_city_from_query(query_req.query, origin, destination, quadrant_locations)
+            if not city_query:
+                raise HTTPException(status_code=400, detail="Could not determine city from query. Please specify a city (e.g., Redmond, WA).")
+
+        # Find location with fuzzy matching
         location = None
         if city_query:
-            location = next((loc for loc in quadrant_locations if loc["city"].lower() == city_query), None)
+            location = next((loc for loc in quadrant_locations if loc["city"].lower() == city_query.lower()), None)
             if not location:
                 for loc in quadrant_locations:
-                    score = fuzz.partial_ratio(city_query, loc["city"].lower())
+                    score = fuzz.partial_ratio(city_query.lower(), loc["city"].lower())
                     if score >= 80:
                         location = loc
                         break
@@ -623,6 +673,7 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
 
         elif intent == "multi_location":
             locations_data = []
+            coordinates = []
             for loc in quadrant_locations:
                 map_url = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(loc['address'])}"
                 static_map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={loc['lat']},{loc['lng']}&zoom=15&size=600x300&markers=color:purple|label:Q|{loc['lat']},{loc['lng']}&key={GOOGLE_MAPS_API_KEY}"
@@ -632,12 +683,26 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                     "map_url": map_url,
                     "static_map_url": static_map_url
                 })
+                coordinates.append({
+                    "lat": loc["lat"],
+                    "lng": loc["lng"],
+                    "label": loc["city"]
+                })
+            
+            # Compute center for overview map
+            center_lat = sum(loc["lat"] for loc in quadrant_locations) / len(quadrant_locations)
+            center_lng = sum(loc["lng"] for loc in quadrant_locations) / len(quadrant_locations)
+            
+            # Static overview map with markers (limit to first 10 for simplicity)
+            markers_str = "|".join([f"color:blue|label:{loc['city'][0]}|{loc['lat']},{loc['lng']}" for loc in quadrant_locations[:10]])
+            overview_static_map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={center_lat},{center_lng}&zoom=2&size=600x300&maptype=roadmap&markers={markers_str}&key={GOOGLE_MAPS_API_KEY}"
             
             map_data = {
                 "type": "multi_location",
                 "data": locations_data,
-                "map_url": "https://www.google.com/maps/search/?api=1&query=Quadrant%20Technologies",
-                "static_map_url": None
+                "map_url": f"https://www.google.com/maps/search/?api=1&query=Quadrant+Technologies+offices+worldwide",
+                "static_map_url": overview_static_map_url,
+                "coordinates": coordinates
             }
 
         elif intent == "nearby":
@@ -650,7 +715,7 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
             if session_id not in session_storage:
                 session_storage[session_id] = {"previous_places": [], "next_page_token": None}
 
-            if "more" in query_req.query.lower() if query_req and query_req.query else False:
+            if query_req.query and "more" in query_req.query.lower():
                 session_storage[session_id]["previous_places"] = []
 
             coordinates = [{
@@ -672,7 +737,6 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
             markers = [f"color:purple|label:Q|{location['lat']},{location['lng']}"]
             for place in places['results'][:10]:
                 place_id = place['place_id']
-                place_name = place['name'].lower()
                 if place_id not in seen_place_ids:
                     place_lat, place_lng = place['geometry']['location']['lat'], place['geometry']['location']['lng']
                     price_level = place.get('price_level')
@@ -698,7 +762,7 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                     seen_place_ids.add(place_id)
 
             next_page_token = places.get('next_page_token')
-            if next_page_token and len(data_list) < 10 and "more" in query_req.query.lower() if query_req and query_req.query else False:
+            if next_page_token and len(data_list) < 10 and query_req.query and "more" in query_req.query.lower():
                 logger.info(f"Fetching more results with next_page_token: {next_page_token}")
                 time.sleep(2)
                 more_places = gmaps.places_nearby(
@@ -710,7 +774,6 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                 logger.info(f"Places API returned {len(more_places['results'])} additional results")
                 for place in more_places['results'][:10 - len(data_list)]:
                     place_id = place['place_id']
-                    place_name = place['name'].lower()
                     if place_id not in seen_place_ids:
                         place_lat, place_lng = place['geometry']['location']['lat'], place['geometry']['location']['lng']
                         price_level = place.get('price_level')
@@ -748,7 +811,6 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                 )
                 for place in places['results'][:10]:
                     place_id = place['place_id']
-                    place_name = place['name'].lower()
                     if place_id not in seen_place_ids:
                         place_lat, place_lng = place['geometry']['location']['lat'], place['geometry']['location']['lng']
                         price_level = place.get('price_level')
@@ -798,11 +860,9 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
             }
 
         elif intent == "directions":
-            if not location and not city_query:
+            if not location:
                 raise HTTPException(status_code=400, detail="Please specify a destination city for directions")
-            source = location or next((loc for loc in quadrant_locations if loc["city"].lower() == city_query), None)
-            if not source:
-                raise HTTPException(status_code=404, detail="Source Quadrant location not found")
+            source = location
             source_addr = source["address"]
 
             if origin:
@@ -832,11 +892,9 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                 raise HTTPException(status_code=400, detail="Please specify an origin for directions")
 
         elif intent == "distance":
-            if not location and not city_query:
+            if not location:
                 raise HTTPException(status_code=400, detail="Please specify a city for distance query")
-            source = location or next((loc for loc in quadrant_locations if loc["city"].lower() == city_query), None)
-            if not source:
-                raise HTTPException(status_code=404, detail="Source Quadrant location not found")
+            source = location
             source_addr = source["address"]
 
             if not destination:
@@ -874,15 +932,6 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
                 dest_lng = place.get("location", {}).get("longitude")
 
                 if dest_lat and dest_lng:
-                    from math import radians, sin, cos, sqrt, atan2
-                    def haversine_distance(lat1, lon1, lat2, lon2):
-                        R = 6371
-                        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-                        dlat = lat2 - lat1
-                        dlon = lon2 - lon1
-                        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-                        c = 2 * atan2(sqrt(a), sqrt(1-a))
-                        return R * c
                     approx_distance = haversine_distance(source["lat"], source["lng"], dest_lat, dest_lng)
                     if approx_distance > 100:
                         logger.warning(f"Places API returned a location too far away: {dest_addr} ({approx_distance:.1f} km)")
@@ -968,6 +1017,181 @@ async def handle_map_query(session_id: str, query_req: QueryRequest, intent_data
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing map query: {str(e)}")
 
+def strip_markdown(text: str) -> str:
+    if not text:
+        return text
+    # Remove headers
+    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+    # Remove bold **text** and italics *text*
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    # Remove links [text](url)
+    text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+    # Remove code blocks
+    text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+    # Remove inline code `code`
+    text = re.sub(r'`(.*?)`', r'\1', text)
+    # Clean up extra newlines
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    # Remove trailing punctuation if needed, but keep periods
+    return text.strip()
+async def detect_language(text: str) -> str:
+    try:
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a language detector. Detect the language of the following text. It is either English ('en'), Kannada ('kn', uses Kannada script with rounded letters), or Telugu ('te', uses Telugu script with distinct circular vowels and more curves). Respond with only the ISO code."},
+                {"role": "user", "content": f"Language: {text}"}
+            ],
+            max_tokens=5
+        )
+        lang = completion.choices[0].message.content.strip().lower()
+        return lang if lang in ['en', 'kn', 'te'] else 'en'
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Language detection failed: {e}, defaulting to 'en'")
+        return 'en'
+def detect_language_sync(text: str) -> str:
+    try:
+        completion = sync_openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a language detector. Detect the language of the following text. It is either English ('en'), Kannada ('kn', uses Kannada script with rounded letters), or Telugu ('te', uses Telugu script with distinct circular vowels and more curves). Respond with only the ISO code."},
+                {"role": "user", "content": f"Language: {text}"}
+            ],
+            max_tokens=5
+        )
+        lang = completion.choices[0].message.content.strip().lower()
+        return lang if lang in ['en', 'kn', 'te'] else 'en'
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Language detection failed: {e}, defaulting to 'en'")
+        return 'en'
+async def translate_text(text: str, target_lang: str, source_lang: str) -> str:
+    if source_lang == target_lang:
+        return text
+    try:
+        prompt = f"Translate the following text from {source_lang} to {target_lang}. Provide only the translation, no additional text: {text}"
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Translation failed: {e}")
+        return text  # Fallback to original
+def translate_text_sync(text: str, target_lang: str, source_lang: str) -> str:
+    if source_lang == target_lang:
+        return text
+    try:
+        prompt = f"Translate the following text from {source_lang} to {target_lang}. Provide only the translation, no additional text: {text}"
+        completion = sync_openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        logging.getLogger(__name__).error(f"Translation failed: {e}")
+        return text  # Fallback to original
+def split_into_sentences(text: str, max_length: int = 150) -> list[str]:
+    # Split on sentence-ending punctuation: ., ?, !, । followed by whitespace
+    sentences = re.split(r'([.?!।]\s+)', text)
+    chunks = []
+    current_chunk = ""
+    for part in sentences:
+        if len(current_chunk + part) > max_length:
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            current_chunk = part
+        else:
+            current_chunk += part
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    # If still too long, split by words
+    final_chunks = []
+    for chunk in chunks:
+        if len(chunk) <= max_length:
+            final_chunks.append(chunk)
+        else:
+            words = chunk.split()
+            sub_chunk = ""
+            for word in words:
+                if len(sub_chunk + word + " ") > max_length:
+                    if sub_chunk:
+                        final_chunks.append(sub_chunk.strip())
+                    sub_chunk = word + " "
+                else:
+                    sub_chunk += word + " "
+            if sub_chunk:
+                final_chunks.append(sub_chunk.strip())
+    return [c for c in final_chunks if c]
+def generate_indic_tts(text: str, lang: str) -> bytes:
+    if not GOOGLE_CREDENTIALS_PATH or not os.path.exists(GOOGLE_CREDENTIALS_PATH):
+        raise Exception("Google TTS credentials not found. Set GOOGLE_TTS in .env to the path of your service account JSON.")
+    credentials = service_account.Credentials.from_service_account_file(GOOGLE_CREDENTIALS_PATH)
+    client = texttospeech.TextToSpeechClient(credentials=credentials)
+    # Set language and voice based on lang
+    if lang == 'kn':
+        language_code = "kn-IN"
+        voice_name = "kn-IN-Chirp3-HD-Achernar"
+    elif lang == 'te':
+        language_code = "te-IN"
+        voice_name = "te-IN-Chirp3-HD-Achernar"
+    else:
+        raise ValueError(f"Unsupported Indic language: {lang}")
+    # Split into small sentences/chunks
+    chunks = split_into_sentences(text)
+    if not chunks:
+        raise ValueError("No valid chunks to synthesize")
+    audio_segments = []
+    for i, chunk in enumerate(chunks):
+        try:
+            synthesis_input = texttospeech.SynthesisInput(text=chunk)
+            voice = texttospeech.VoiceSelectionParams(
+                language_code=language_code,
+                name=voice_name
+            )
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3
+            )
+            response = client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config
+            )
+            # Load as AudioSegment for concatenation
+            seg = AudioSegment.from_mp3(io.BytesIO(response.audio_content))
+            audio_segments.append(seg)
+            # Add a short pause between chunks for natural flow (except last)
+            if i < len(chunks) - 1:
+                pause = AudioSegment.silent(duration=500)  # 0.5 second pause
+                audio_segments.append(pause)
+        except Exception as e:
+            logger.warning(f"Failed to synthesize chunk '{chunk[:50]}...': {e}")
+            # Skip this chunk and continue
+            continue
+    if not audio_segments:
+        raise ValueError("No audio segments generated")
+    # Concatenate all segments
+    combined = AudioSegment.empty()
+    for seg in audio_segments:
+        combined += seg
+    # Export combined audio to bytes
+    output = io.BytesIO()
+    combined.export(output, format="mp3")
+    output.seek(0)
+    return output.getvalue()
+def load_pre_stored_audio(lang: str) -> bytes:
+    if lang == 'kn':
+        file_path = KANNADA_PRESTORED_PATH
+    elif lang == 'te':
+        file_path = TELUGU_PRESTORED_PATH
+    else:
+        raise ValueError(f"No pre-stored audio for language: {lang}")
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Pre-stored audio file not found: {file_path}")
+    with open(file_path, 'rb') as f:
+        return f.read()
 @router.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     try:
@@ -977,7 +1201,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             websocket_connections[session_id] = []
         websocket_connections[session_id].append(websocket)
         logger.info(f"WebSocket connected for session {session_id}. Total connections: {len(websocket_connections[session_id])}")
-        
+       
         try:
             while True:
                 data = await websocket.receive_json()
@@ -985,7 +1209,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     await websocket.send_json({"type": "pong"})
                     logger.debug(f"Received ping for session {session_id}, sent pong")
                     continue
-                
+               
                 # Process text query
                 query = data.get("content")
                 role = data.get("role", "candidate")
@@ -1001,7 +1225,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                         map_data=map_data,
                         media_data=media_data
                     )
-                
+               
         except WebSocketDisconnect:
             websocket_connections[session_id].remove(websocket)
             logger.info(f"WebSocket disconnected for session {session_id}. Remaining connections: {len(websocket_connections[session_id])}")
@@ -1021,7 +1245,6 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             websocket_connections[session_id].remove(websocket)
             if not websocket_connections[session_id]:
                 del websocket_connections[session_id]
-
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -1040,7 +1263,6 @@ def send_stt_request(audio_filename, mp3_bytes):
     response = requests.post(stt_url, headers=headers, files=files)
     response.raise_for_status()
     return response.json()
-
 async def speech_to_text(audio_bytes: bytes) -> str:
     try:
         audio_io = io.BytesIO(audio_bytes)
@@ -1048,7 +1270,7 @@ async def speech_to_text(audio_bytes: bytes) -> str:
         mp3_io = io.BytesIO()
         audio_segment.export(mp3_io, format="mp3")
         mp3_io.seek(0)
-        
+       
         response_json = send_stt_request("recording.mp3", mp3_io.getvalue())
         transcription = response_json.get("text", "")
         if not transcription:
@@ -1058,7 +1280,6 @@ async def speech_to_text(audio_bytes: bytes) -> str:
     except Exception as e:
         logger.error(f"Speech-to-text error: {str(e)}")
         raise
-
 async def generate_fallback_response(query: str):
     try:
         completion = await openai_client.chat.completions.create(
@@ -1073,7 +1294,6 @@ async def generate_fallback_response(query: str):
     except Exception as e:
         logger.error(f"Fallback GPT response error: {str(e)}")
         return "I'm sorry, I couldn't process your query at the moment. Please try again."
-
 async def process_query(context, query: str, role: str, intent_data: dict = None):
     try:
         agent_instance = Agent()
@@ -1082,13 +1302,12 @@ async def process_query(context, query: str, role: str, intent_data: dict = None
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         raise
-
 async def persist_message(session_id: str, query: str, response: str, role: str, audio_base64: str = None, map_data: dict = None, media_data: dict = None):
     try:
         session = await context_manager.get_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-        
+       
         history = session.get("chat_history", [])
         history.append({
             "role": role,
@@ -1099,7 +1318,7 @@ async def persist_message(session_id: str, query: str, response: str, role: str,
             "map_data": map_data,
             "media_data": media_data
         })
-        
+       
         collection_name = f"sessions_{session_id}"
         await context_manager.db[collection_name].update_one(
             {"session_id": session_id},
@@ -1109,7 +1328,6 @@ async def persist_message(session_id: str, query: str, response: str, role: str,
     except Exception as e:
         logger.error(f"Error persisting message for session {session_id}: {str(e)}")
         raise
-
 @router.websocket("/ws/voice/{session_id}")
 async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
     try:
@@ -1119,7 +1337,6 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             websocket_connections[session_id] = []
         websocket_connections[session_id].append(websocket)
         logger.info(f"Voice WebSocket connected for session {session_id}. Total connections: {len(websocket_connections[session_id])}")
-
         try:
             while True:
                 data = await websocket.receive_json()
@@ -1127,13 +1344,11 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
                     await websocket.send_json({"type": "pong"})
                     logger.debug(f"Received ping for session {session_id}, sent pong")
                     continue
-
                 audio_data = data.get("audio_data")
                 if not audio_data:
                     logger.error(f"No audio data provided for session {session_id}")
                     await websocket.send_json({"error": "No audio data provided"})
                     continue
-
                 try:
                     audio_bytes = base64.b64decode(audio_data)
                     logger.debug(f"Received audio data for session {session_id}: {len(audio_bytes)} bytes")
@@ -1143,64 +1358,87 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
                         await websocket.send_json({"error": "No transcription generated from audio"})
                         continue
                     logger.debug(f"Transcribed audio for session {session_id}: {transcription}")
-
-                    # Process the transcribed query using context_manager.process_query
-                    response, media_data, history = await context_manager.process_query(
-                        session_id=session_id,
-                        query=transcription,
-                        role="candidate"
-                    )
-
-                    # Generate TTS response
-                    tts_headers = {
-                        "Accept": "audio/mpeg",
-                        "Content-Type": "application/json",
-                        "xi-api-key": ELEVENLABS_API_KEY
-                    }
-                    tts_data = {
-                        "text": response,
-                        "model_id": ELEVENLABS_MODEL_ID_TTS,
-                        "voice_settings": {
-                            "stability": 0.5,
-                            "similarity_boost": 0.5
-                        }
-                    }
-                    tts_response = requests.post(
-                        f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
-                        json=tts_data,
-                        headers=tts_headers
-                    )
-                    if tts_response.status_code != 200:
-                        logger.error(f"ElevenLabs TTS API error: {tts_response.text}")
-                        await websocket.send_json({"error": f"Text-to-speech API error: {tts_response.text}"})
-                        continue
-
-                    audio_base64 = base64.b64encode(tts_response.content).decode("utf-8")
-                    
+                    # Auto-detect language
+                    lang = await detect_language(transcription)
+                    logger.info(f"Detected language for session {session_id}: {lang}")
+                    # For non-live mode + Indic languages: skip full pipeline, delay, play hardcoded audio
+                    if not LIVE_MODE and lang in ['kn', 'te']:
+                        # Still process query in background for persistence (no await to avoid delay)
+                        asyncio.create_task(
+                            (lambda: context_manager.process_query(session_id=session_id, query=transcription, role="candidate"))()
+                        )
+                        # Fixed 5-second delay
+                        await asyncio.sleep(HARDCODED_DELAY_SECONDS)
+                        try:
+                            audio_bytes = load_pre_stored_audio(lang)
+                            logger.info(f"Playing pre-stored {lang} audio after {HARDCODED_DELAY_SECONDS}s delay")
+                        except Exception as e:
+                            logger.error(f"Failed to load pre-stored audio for {lang}: {str(e)}")
+                            await websocket.send_json({"error": f"Failed to load pre-stored audio: {str(e)}"})
+                            continue
+                        # Send dummy response (use transcription as content for display)
+                        response = transcription  # Or a placeholder like "Leave policy explained."
+                    else:
+                        # Full live pipeline for English or live mode
+                        query_en = transcription if lang == 'en' else await translate_text(transcription, target_lang='en', source_lang=lang)
+                        response_en, media_data, history = await context_manager.process_query(
+                            session_id=session_id,
+                            query=query_en,
+                            role="candidate"
+                        )
+                        tts_text_en = strip_markdown(response_en)
+                        response = tts_text_en if lang == 'en' else await translate_text(tts_text_en, target_lang=lang, source_lang='en')
+                        tts_text = response
+                        if lang == 'en':
+                            tts_headers = {
+                                "Accept": "audio/mpeg",
+                                "Content-Type": "application/json",
+                                "xi-api-key": ELEVENLABS_API_KEY
+                            }
+                            tts_data = {
+                                "text": tts_text,
+                                "model_id": ELEVENLABS_MODEL_ID_TTS,
+                                "voice_settings": {
+                                    "stability": 0.5,
+                                    "similarity_boost": 0.5
+                                }
+                            }
+                            tts_response = requests.post(
+                                f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                                json=tts_data,
+                                headers=tts_headers
+                            )
+                            if tts_response.status_code != 200:
+                                logger.error(f"ElevenLabs TTS API error: {tts_response.text}")
+                                await websocket.send_json({"error": f"Text-to-speech API error: {tts_response.text}"})
+                                continue
+                            audio_bytes = tts_response.content
+                        else:
+                            audio_bytes = generate_indic_tts(tts_text, lang)
+                    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
                     response_message = {
                         "type": "response",
                         "role": "assistant",
                         "content": response,
                         "audio_base64": audio_base64,
                         "map_data": None,
-                        "media_data": media_data,
+                        "media_data": {} if 'media_data' not in locals() else media_data,
                         "timestamp": int(datetime.now().timestamp())
                     }
                     await websocket.send_json(response_message)
                     logger.debug(f"Sent voice response for session {session_id}")
-
-                    # Persist the message
+                    # Persist (use original response_en if available)
+                    persist_response = response_en if 'response_en' in locals() else response
                     await persist_message(
                         session_id=session_id,
                         query=transcription,
-                        response=response,
+                        response=persist_response,
                         role="candidate",
                         audio_base64=audio_base64,
                         map_data=None,
-                        media_data=media_data
+                        media_data={} if 'media_data' not in locals() else media_data
                     )
-
-                    # Broadcast to all WebSocket connections
+                    # Broadcast
                     if session_id in websocket_connections:
                         for conn in websocket_connections[session_id]:
                             try:
@@ -1216,14 +1454,13 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
                             except Exception as e:
                                 logger.error(f"WebSocket broadcast failed for session {session_id}: {str(e)}")
                                 websocket_connections[session_id].remove(conn)
-
                 except ValueError as e:
                     logger.error(f"Invalid audio data for session {session_id}: {str(e)}")
                     await websocket.send_json({"error": "Invalid audio data format"})
                 except Exception as e:
                     logger.error(f"Error processing voice input for session {session_id}: {str(e)}")
                     await websocket.send_json({"error": f"Failed to process voice input: {str(e)}"})
-            
+           
         except WebSocketDisconnect:
             logger.info(f"Voice WebSocket disconnected for session {session_id}. Remaining connections: {len(websocket_connections.get(session_id, [])) - 1}")
             websocket_connections[session_id].remove(websocket)
@@ -1244,26 +1481,25 @@ async def voice_websocket_endpoint(websocket: WebSocket, session_id: str):
             if not websocket_connections[session_id]:
                 del websocket_connections[session_id]
             logger.info(f"Voice WebSocket connection closed for session {session_id}. Remaining connections: {len(websocket_connections.get(session_id, []))}")
-
 @app.post("/voice/{session_id}")
 async def process_voice(session_id: str, audio: UploadFile = File(...)):
     try:
         if not is_valid_uuid(session_id):
             raise HTTPException(status_code=400, detail="Invalid session_id format. Must be a valid UUID.")
-        
+       
         logger.info(f"Processing voice input for session {session_id}")
         start_time = time.time()
         audio_content = await audio.read()
         if not audio_content:
             logger.error(f"No audio content received for session {session_id}")
             raise HTTPException(status_code=400, detail="No audio content provided")
-        
+       
         audio_io = io.BytesIO(audio_content)
         audio_segment = AudioSegment.from_file(audio_io)
         wav_io = io.BytesIO()
         audio_segment.export(wav_io, format="wav")
         wav_io.seek(0)
-        
+       
         headers = {
             "Accept": "application/json",
             "xi-api-key": ELEVENLABS_API_KEY
@@ -1282,41 +1518,65 @@ async def process_voice(session_id: str, audio: UploadFile = File(...)):
             if response.status_code == 429:
                 raise HTTPException(status_code=429, detail="The speech-to-text service is currently busy. Please try again later.")
             raise HTTPException(status_code=500, detail=f"Speech-to-text API error: {response.text}")
-        
+       
         transcription = response.json().get("text")
         if not transcription:
             logger.warning(f"No transcription received for session {session_id}")
             raise HTTPException(status_code=400, detail="No transcription could be generated from the audio")
-        
+       
         logger.info(f"Transcribed audio for session {session_id}: {transcription}")
-        
-        response, media_data, history = await context_manager.process_query(session_id, transcription, "candidate")
-        
-        tts_headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": ELEVENLABS_API_KEY
-        }
-        tts_data = {
-            "text": response,
-            "model_id": ELEVENLABS_MODEL_ID_TTS,
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.5
-            }
-        }
-        tts_response = requests.post(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
-            json=tts_data,
-            headers=tts_headers
-        )
-        if tts_response.status_code != 200:
-            logger.error(f"ElevenLabs TTS API error: {tts_response.text}")
-            raise HTTPException(status_code=500, detail=f"Text-to-speech API error: {tts_response.text}")
-        
-        audio_base64 = base64.b64encode(tts_response.content).decode("utf-8")
+        # Auto-detect language
+        lang = detect_language_sync(transcription)
+        logger.info(f"Detected language for session {session_id}: {lang}")
+        # For non-live mode + Indic: skip full pipeline, delay, play hardcoded
+        if not LIVE_MODE and lang in ['kn', 'te']:
+            # Background persistence
+            asyncio.create_task(
+                (lambda: context_manager.process_query(session_id=session_id, query=transcription, role="candidate"))()
+            )
+            await asyncio.sleep(HARDCODED_DELAY_SECONDS)
+            try:
+                audio_bytes = load_pre_stored_audio(lang)
+                logger.info(f"Playing pre-stored {lang} audio after {HARDCODED_DELAY_SECONDS}s delay")
+            except Exception as e:
+                logger.error(f"Failed to load pre-stored audio for {lang}: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"Failed to load pre-stored audio: {str(e)}")
+            response = transcription  # Dummy
+        else:
+            query_en = transcription if lang == 'en' else translate_text_sync(transcription, target_lang='en', source_lang=lang)
+            response_en, media_data, history = await context_manager.process_query(session_id, query_en, "candidate")
+            tts_text_en = strip_markdown(response_en)
+            response = tts_text_en if lang == 'en' else translate_text_sync(tts_text_en, target_lang=lang, source_lang='en')
+            tts_text = response
+            if lang == 'en':
+                tts_headers = {
+                    "Accept": "audio/mpeg",
+                    "Content-Type": "application/json",
+                    "xi-api-key": ELEVENLABS_API_KEY
+                }
+                tts_data = {
+                    "text": tts_text,
+                    "model_id": ELEVENLABS_MODEL_ID_TTS,
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.5
+                    }
+                }
+                tts_response = requests.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+                    json=tts_data,
+                    headers=tts_headers
+                )
+                if tts_response.status_code != 200:
+                    logger.error(f"ElevenLabs TTS API error: {tts_response.text}")
+                    raise HTTPException(status_code=500, detail=f"Text-to-speech API error: {tts_response.text}")
+                audio_bytes = tts_response.content
+            else:
+                audio_bytes = generate_indic_tts(tts_text, lang)
+       
+        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
         logger.info(f"Generated audio response for session {session_id}")
-        
+       
         if session_id in websocket_connections:
             for ws in websocket_connections[session_id]:
                 try:
@@ -1328,22 +1588,22 @@ async def process_voice(session_id: str, audio: UploadFile = File(...)):
                     })
                     await ws.send_json({
                         "role": "assistant",
-                        "content": response,
+                        "content": response_en if 'response_en' in locals() else response,
                         "timestamp": time.time(),
                         "audio_base64": audio_base64,
-                        "media_data": media_data,
+                        "media_data": media_data if 'media_data' in locals() else {},
                         "type": "response"
                     })
                     logger.debug(f"Sent voice response via WebSocket for session {session_id}")
                 except Exception as e:
                     logger.error(f"WebSocket send failed for session {session_id}: {str(e)}")
                     websocket_connections[session_id].remove(ws)
-        
+       
         logger.info(f"Voice processing time: {time.time() - start_time:.2f} seconds")
         return JSONResponse(content={
-            "response": response,
+            "response": response_en if 'response_en' in locals() else response,
             "audio_base64": audio_base64,
-            "media_data": media_data
+            "media_data": media_data if 'media_data' in locals() else {}
         })
     except HTTPException as e:
         logger.error(f"HTTP error in voice processing: {e.detail}")
@@ -1351,5 +1611,4 @@ async def process_voice(session_id: str, audio: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Error processing voice for session {session_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing voice: {str(e)}")
-
 app.include_router(router)

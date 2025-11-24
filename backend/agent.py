@@ -19,6 +19,11 @@ class Agent:
             logger.error("OPENAI_API_KEY not found in .env file")
             raise ValueError("OPENAI_API_KEY environment variable is not set")
         self.client = AsyncOpenAI(api_key=api_key)
+        self.quadrant_cities = [
+            "Redmond, WA", "Iselin, NJ", "Dallas, TX", "Hyderabad, Telangana", "Bengaluru, Karnataka",
+            "Warangal, Telangana", "Noida, Uttar Pradesh", "Guadalajara, Mexico", "Surrey, Canada",
+            "Dubai, UAE", "Lane Cove, Australia", "Kuala Lumpur, Malaysia", "Singapore", "Chiswick, UK"
+        ]
         logger.info("OpenAI client initialized successfully")
         self.suggested_questions = [
             "What is the salary range for this position?",
@@ -651,11 +656,12 @@ class Agent:
                 "nearby_type (e.g., 'ladies pgs', 'gents pgs', 'restaurants', or infer from query like 'hotels', 'cafes'), "
                 "origin (starting point for directions or distance, e.g., Quadrant office address if not specified), "
                 "destination (endpoint for directions or distance, e.g., 'airport'). "
-                "If city is implied (e.g., 'nearby PGs in Hyderabad' or 'how far is airport from Quadrant Hyderabad' implies Quadrant Hyderabad), use it. "
+                "If city is not explicitly mentioned but implied (e.g., 'Seattle Airport' implies 'Redmond, WA'), infer the closest Quadrant city. "
                 "For 'nearby' and 'directions'/'distance' with no explicit origin, use Quadrant office as the source address. "
                 "For queries containing 'how far' or 'distance', classify as 'distance' intent. "
+                "Known city mappings for inference: 'Seattle Airport' -> 'Redmond, WA'. "
                 "If not map-related, classify the intent into one of: "
-                "'video' (queries related to videos, company videos,ai capabilities,ai empowered solutions or any video content), "
+                "'video' (queries related to videos, company videos, Quadrant AI capabilities, AI empowered solutions or any video content), "
                 "'dress' (queries related to dress code, what to wear, or clothing policies), "
                 "'president' (queries related to the president, company leadership, or president details), "
                 "'best_employee' (queries related to the best employee, employee of the month, or similar), "
@@ -664,7 +670,7 @@ class Agent:
                 "For 'dress' intent, also extract 'gender': 'male' if the query mentions male/men/gents, 'female' if female/women/ladies, else null. "
                 "Output ONLY a valid JSON object. Examples: "
                 "{'is_map': true, 'intent': 'single_location', 'city': 'Bengaluru, Karnataka', 'nearby_type': null, 'origin': null, 'destination': null, 'gender': null} "
-                "or {'is_map': true, 'intent': 'distance', 'city': 'Hyderabad, Telangana', 'nearby_type': null, 'origin': null, 'destination': 'airport', 'gender': null} "
+                "or {'is_map': true, 'intent': 'distance', 'city': 'Redmond, WA', 'nearby_type': null, 'origin': 'Quadrant Technologies', 'destination': 'Seattle Airport', 'gender': null} "
                 "or {'is_map': false, 'intent': 'video', 'city': null, 'nearby_type': null, 'origin': null, 'destination': null, 'gender': null} "
                 "or {'is_map': false, 'intent': 'dress', 'city': null, 'nearby_type': null, 'origin': null, 'destination': null, 'gender': 'male'} "
                 "or {'is_map': false, 'intent': 'president', 'city': null, 'nearby_type': null, 'origin': null, 'destination': null, 'gender': null} "
